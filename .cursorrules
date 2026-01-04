@@ -1,6 +1,10 @@
 # Rules
 
-If any files have been changed, run `powershell -ExecutionPolicy Bypass -File build.ps1` to verify a successful build.
+If any files have been changed, run the following command to verify a successful build:
+
+```powershell
+.\dotnet\dotnet.exe publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true
+```
 
 Always update the `README.md` file with the latest changes if necessary.
 

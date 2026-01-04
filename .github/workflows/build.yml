@@ -26,26 +26,29 @@ jobs:
         id: version_check
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          $ErrorActionPreference = 'Continue'
 
-          $csprojContent = Get-Content -Path "WebcamSettings.csproj" -Raw
-
-          $currentVersion = "unknown"
-          if ($csprojContent -match '<Version>(.*?)</Version>') {
-            $currentVersion = $matches[1].Trim()
-          } elseif ($csprojContent -match '<AssemblyVersion>(.*?)</AssemblyVersion>') {
-            $currentVersion = $matches[1].Trim()
+          function Get-VersionFromCsproj {
+            param([string]$Content)
+            if ($Content -match '<Version>(.*?)</Version>') {
+              return $matches[1].Trim()
+            } elseif ($Content -match '<AssemblyVersion>(.*?)</AssemblyVersion>') {
+              return $matches[1].Trim()
+            }
+            return "unknown"
           }
 
+          $csprojContent = Get-Content -Path "WebcamSettings.csproj" -Raw -ErrorAction Stop
+          $currentVersion = Get-VersionFromCsproj -Content $csprojContent
+
           $previousVersion = "unknown"
-          if (git rev-parse --verify HEAD~1 2>$null) {
-            $previousCsprojContent = git show HEAD~1:WebcamSettings.csproj 2>$null
-            if ($previousCsprojContent) {
-              if ($previousCsprojContent -match '<Version>(.*?)</Version>') {
-                $previousVersion = $matches[1].Trim()
-              } elseif ($previousCsprojContent -match '<AssemblyVersion>(.*?)</AssemblyVersion>') {
-                $previousVersion = $matches[1].Trim()
-              }
+          $gitOutput = git rev-parse --verify HEAD~1 2>&1
+          $revParseExitCode = $LASTEXITCODE
+          if ($revParseExitCode -eq 0) {
+            $previousCsprojContent = git show HEAD~1:WebcamSettings.csproj 2>&1
+            $showExitCode = $LASTEXITCODE
+            if ($showExitCode -eq 0 -and $previousCsprojContent -and ($previousCsprojContent -notmatch '^fatal:')) {
+              $previousVersion = Get-VersionFromCsproj -Content $previousCsprojContent
             }
           }
 
