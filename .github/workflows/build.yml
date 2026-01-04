@@ -1,0 +1,145 @@
+name: build
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - WebcamSettings.csproj
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check version changed
+        id: version_check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $csprojContent = Get-Content -Path "WebcamSettings.csproj" -Raw
+
+          $currentVersion = "unknown"
+          if ($csprojContent -match '<Version>(.*?)</Version>') {
+            $currentVersion = $matches[1].Trim()
+          } elseif ($csprojContent -match '<AssemblyVersion>(.*?)</AssemblyVersion>') {
+            $currentVersion = $matches[1].Trim()
+          }
+
+          $previousVersion = "unknown"
+          if (git rev-parse --verify HEAD~1 2>$null) {
+            $previousCsprojContent = git show HEAD~1:WebcamSettings.csproj 2>$null
+            if ($previousCsprojContent) {
+              if ($previousCsprojContent -match '<Version>(.*?)</Version>') {
+                $previousVersion = $matches[1].Trim()
+              } elseif ($previousCsprojContent -match '<AssemblyVersion>(.*?)</AssemblyVersion>') {
+                $previousVersion = $matches[1].Trim()
+              }
+            }
+          }
+
+          $changed = "false"
+          if ($currentVersion -ne $previousVersion) {
+            $changed = "true"
+          }
+
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "current=$currentVersion"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "previous=$previousVersion"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "changed=$changed"
+
+      - name: Setup .NET SDK
+        if: steps.version_check.outputs.changed == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build executable
+        if: steps.version_check.outputs.changed == 'true'
+        shell: pwsh
+        run: |
+          dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true
+
+      - name: Prepare build artifacts
+        if: steps.version_check.outputs.changed == 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "build-assets" -Force | Out-Null
+          Copy-Item -Path "bin\Release\net10.0-windows\win-x64\publish\WebcamSettings.exe" -Destination "build-assets\WebcamSettings.exe" -ErrorAction SilentlyContinue
+
+      - name: Upload build artifacts
+        if: steps.version_check.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Executables
+          path: build-assets/
+
+      - name: Prepare release info
+        if: steps.version_check.outputs.changed == 'true'
+        id: rel
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $csprojContent = Get-Content -Path "WebcamSettings.csproj" -Raw
+
+          $version = "unknown"
+          if ($csprojContent -match '<Version>(.*?)</Version>') {
+            $version = $matches[1].Trim()
+          } elseif ($csprojContent -match '<AssemblyVersion>(.*?)</AssemblyVersion>') {
+            $version = $matches[1].Trim()
+          }
+
+          $name = "WebcamSettings"
+          if ($csprojContent -match '<AssemblyName>(.*?)</AssemblyName>') {
+            $name = $matches[1].Trim()
+          }
+
+          $releaseName = "$name $version"
+
+          $lastTag = ""
+          $range = "HEAD"
+          $tagOutput = git describe --tags --abbrev=0 2>$null
+          if ($tagOutput) {
+            $lastTag = $tagOutput.Trim()
+            $range = "${lastTag}..HEAD"
+          }
+
+          $releaseBody = "`n"
+          if ($lastTag) {
+            $releaseBody += "Commits since ${lastTag}:`n"
+          } else {
+            $releaseBody += "Commits:`n"
+          }
+          $commits = git log $range --no-merges --pretty=format:'- %s (%h)' 2>$null
+          if ($commits) {
+            $releaseBody += $commits
+          }
+          $releaseBody += "`n"
+
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "tag_name=v$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "release_name=$releaseName"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "release_body<<__REL_BODY__"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $releaseBody
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "__REL_BODY__"
+
+      - name: Create GitHub Release
+        if: steps.version_check.outputs.changed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.rel.outputs.tag_name }}
+          name: ${{ steps.rel.outputs.release_name }}
+          body: ${{ steps.rel.outputs.release_body }}
+          files: build-assets/*
+

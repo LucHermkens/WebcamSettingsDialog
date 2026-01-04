@@ -1,0 +1,10 @@
+# Rules
+
+If any files have been changed, run `powershell -ExecutionPolicy Bypass -File build.ps1` to verify a successful build.
+
+Always update the `README.md` file with the latest changes if necessary.
+
+The project is a Windows tool to open the webcam settings dialog.
+The project uses .NET 10.0.
+
+Keep the conclusion you write at the end of your response: concise and to the point.
