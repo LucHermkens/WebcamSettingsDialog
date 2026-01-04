@@ -71,7 +71,7 @@ jobs:
         if: steps.version_check.outputs.changed == 'true'
         shell: pwsh
         run: |
-          dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true
+          ./build.ps1
 
       - name: Prepare build artifacts
         if: steps.version_check.outputs.changed == 'true'
