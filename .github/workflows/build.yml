@@ -124,9 +124,9 @@ jobs:
           } else {
             $releaseBody += "Commits:`n"
           }
-          $commits = git log $range --no-merges --pretty=format:'- %s (%h)' 2>$null
+          $commits = git log $range --no-merges --pretty=format:'- %s (%h)%n' 2>$null
           if ($commits) {
-            $releaseBody += $commits
+            $releaseBody += (($commits | ForEach-Object { $_.TrimEnd() }) -join "`n")
           }
           $releaseBody += "`n"
 
@@ -145,4 +145,3 @@ jobs:
           name: ${{ steps.rel.outputs.release_name }}
           body: ${{ steps.rel.outputs.release_body }}
           files: build-assets/*
-
